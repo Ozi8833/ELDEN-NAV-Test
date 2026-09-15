@@ -768,7 +768,7 @@ dialog > .dialog-card { width:100%; max-width:100%; box-sizing:border-box; }
     <header class="topbar">
       <div>
         <div class="eyebrow">ELDEN RING PROGRESS NAV</div>
-        <h1>ELDEN NAV <span class="version">v2.4.6</span></h1>
+        <h1>ELDEN NAV <span class="version">v2.4.7</span></h1>
       </div>
       <div class="top-actions">
         <button id="profileBtn" class="icon-btn profile-icon-btn" type="button" title="プロフィール" aria-label="プロフィール">👤</button>
@@ -913,7 +913,7 @@ dialog > .dialog-card { width:100%; max-width:100%; box-sizing:border-box; }
       </section>
 
       <section class="panel compact notice">
-        <div class="eyebrow">ELDEN NAV v2.4.6</div>
+        <div class="eyebrow">ELDEN NAV v2.4.7</div>
         <p>スマホ片手操作を優先したUIへ整理。ホームは「次にやること」を中心に、よく使う6機能だけを表示し、その他は「すべてのツール」に収納。下部ナビから次へ・マップ・検索・進行・ツールへいつでも移動できます。</p>
       </section>
     </main>
@@ -1026,7 +1026,7 @@ dialog > .dialog-card { width:100%; max-width:100%; box-sizing:border-box; }
   <script>
 const STORE_KEY = 'elden-nav-v1-store';
 const LEGACY_KEY = 'elden-nav-mvp-v1';
-const APP_VERSION = '2.4.6';
+const APP_VERSION = '2.4.7';
 
 const builds = [
   { id: 'unknown', label: '🤔 よく分からない' },
@@ -1539,11 +1539,12 @@ const bossAdvice = {
 };
 
 const regionDefs = [
-  {id:'limgrave', name:'リムグレイブ', icon:'🌿', progress:['roundtable','margit','godrick'], gear:['thirdChurchSet','stormhillSeed','bloodhoundFang','uchigatana','greenTurtle','clawTalisman']},
-  {id:'weeping', name:'啜り泣きの半島', icon:'🌧️', progress:[], gear:['claymore','wingedScythe','twoFingersHeirloom']},
-  {id:'liurniaRegion', name:'リエーニエ', icon:'🌊', progress:['liurnia','academyKey','rennala'], gear:['knightSet','irithTear','radagonIcon','carianKnightSet','nightFlame','darkMoon']},
+  {id:'limgrave', name:'リムグレイブ', icon:'🌿', progress:['roundtable','margit','godrick'], gear:['thirdChurchSet','stormhillSeed','bloodhoundFang','uchigatana','greenTurtle','clawTalisman','stormBladeAsh','bloodySlashAsh','loneWolfAshes','carianSlicer']},
+  {id:'weeping', name:'啜り泣きの半島', icon:'🌧️', progress:[], gear:['claymore','wingedScythe','twoFingersHeirloom','lhutelAshes']},
+  {id:'liurniaRegion', name:'リエーニエ', icon:'🌊', progress:['liurnia','academyKey','rennala'], gear:['knightSet','irithTear','radagonIcon','carianKnightSet','nightFlame','darkMoon','flameCleanseMe']},
   {id:'caelidRegion', name:'ケイリッド', icon:'🟥', progress:['radahn'], gear:['meteoriteStaff','rockSling','flameGrant','moonveil','greatJar','radagonSoreseal']},
-  {id:'undergroundRegion', name:'地下世界・ノクローン', icon:'🌌', progress:[], gear:['mimicTear']},
+  {id:'undergroundRegion', name:'地下世界・ノクローン', icon:'🌌', reachedAfterProgress:['radahn'], progress:[], gear:['mimicTear']},
+  {id:'volcanoRegion', name:'ゲルミア火山・火山館', icon:'🌋', reachedAfterProgress:['altus'], progress:[], gear:['blasphemousBlade']},
   {id:'altusCapitalRegion', name:'アルター高原・王都', icon:'🌾', progress:['altus','capitalGate','goldenGodfrey','morgott'], gear:['goldenVow','boltGransax']},
   {id:'mountainRegion', name:'巨人たちの山嶺', icon:'❄️', progress:['mountaintops','fireGiant','forge'], gear:[]},
   {id:'endRegion', name:'終盤地域', icon:'🌀', progress:['godskinDuo','maliketh','gideon','godfreyFinal','radagonBeast','ending'], gear:['shardAlexander','dragoncrestGreatshield']},
@@ -1572,12 +1573,15 @@ function safeStoredString(value='', max=160){ return String(value??'').slice(0,m
 function clampMapCoord(value){ const n=Number(value); return Number.isFinite(n)?Math.max(0,Math.min(100,n)):null; }
 function normalizeMapPins(raw){
   if(!Array.isArray(raw))return [];
+  const seen=new Set();
   return raw.slice(-200).map((p,index)=>{
     const x=clampMapCoord(p?.x), y=clampMapCoord(p?.y);
     if(x==null||y==null)return null;
     const category=['later','boss','item','grace','note','rune','death'].includes(p?.category)?p.category:'later';
+    let baseId=safeStoredString(p?.id||`mp_import_${index}`,120).replace(/[^A-Za-z0-9:_-]/g,'_')||`mp_import_${index}`;
+    let id=baseId,n=1; while(seen.has(id))id=`${baseId}_${n++}`; seen.add(id);
     return {
-      id:safeStoredString(p?.id||`mp_import_${index}`,120), x, y,
+      id, x, y,
       title:safeStoredString(p?.title||'ピン',60), note:safeStoredString(p?.note||'',160), category,
       gearId:gear.some(g=>g.id===p?.gearId)?p.gearId:null,
       runeFarmId:runeFarms.some(f=>f.id===p?.runeFarmId)?p.runeFarmId:null,
@@ -1635,13 +1639,35 @@ const revealedDlcProgress=new Set();
 const revealedSearchPerformance=new Set();
 let toastTimer=null;
 
+function normalizeCustomGear(raw){
+  if(!Array.isArray(raw))return [];
+  const knownIds=new Set(gear.map(g=>g.id));
+  const reserved=new Set(['custom_regular','custom_somber','__proto__','constructor','prototype']);
+  const allowedCats=new Set(['weapon','armor','talisman','spirit','ash','sorcery','incantation']);
+  const allowedUp=new Set(['regular','somber','none']);
+  const labels={weapon:'武器',armor:'防具',talisman:'タリスマン',spirit:'遺灰',ash:'戦灰',sorcery:'魔術',incantation:'祈祷'};
+  const seen=new Set();
+  const out=[];
+  for(const item of raw.slice(-100)){
+    if(!item||typeof item!=='object')continue;
+    const id=safeStoredString(item.id||'',120);
+    if(!/^custom_[A-Za-z0-9_-]{1,110}$/.test(id)||reserved.has(id)||knownIds.has(id)||seen.has(id))continue;
+    const category=allowedCats.has(item.category)?item.category:'weapon';
+    const upgradeType=category==='weapon'&&allowedUp.has(item.upgradeType)?item.upgradeType:'none';
+    const name=safeStoredString(item.name||'カスタム装備',50).trim()||'カスタム装備';
+    seen.add(id);
+    out.push({id,name,category,categoryLabel:labels[category],builds:['all'],reqStats:{},custom:true,upgradeType});
+  }
+  return out;
+}
+
 function normalizeProfile(p){
   const base=defaultProfile(p?.name || '褪せ人');
   const normalized={
     ...base,...p,
     progress:{...base.progress,...(p?.progress||{})}, dlcProgress:{...base.dlcProgress,...(p?.dlcProgress||{})},
     obtained:{...(p?.obtained||{})}, favorites:{...(p?.favorites||{})}, later:{...(p?.later||{})}, npcStatus:{...base.npcStatus,...(p?.npcStatus||{})}, stats:{...base.stats,...(p?.stats||{})}, currentLevel:(p?.currentLevel===''||p?.currentLevel==null)?'':String(Math.max(1,Math.min(713,Number(p.currentLevel)||1))), runeGoalLevels:[1,3,5,10].includes(Number(p?.runeGoalLevels))?Number(p.runeGoalLevels):5, runeFarmPreference:['balanced','efficiency','safe','combat','noCombat'].includes(p?.runeFarmPreference)?p.runeFarmPreference:'balanced', runeUnlocks:{...base.runeUnlocks,...(p?.runeUnlocks||{})},
-    history:Array.isArray(p?.history)?p.history.slice(-80):[], weaponUpgrades:{...(p?.weaponUpgrades||{})}, notes:Array.isArray(p?.notes)?p.notes.slice(-100):[], customGear:Array.isArray(p?.customGear)?p.customGear.slice(-100):[], equippedSet:{...base.equippedSet,...(p?.equippedSet||{})}, equipLoad:{...base.equipLoad,...(p?.equipLoad||{})},
+    history:Array.isArray(p?.history)?p.history.slice(-80):[], weaponUpgrades:{...(p?.weaponUpgrades||{})}, notes:Array.isArray(p?.notes)?p.notes.slice(-100):[], customGear:normalizeCustomGear(p?.customGear), equippedSet:{...base.equippedSet,...(p?.equippedSet||{})}, equipLoad:{...base.equipLoad,...(p?.equipLoad||{})},
     buildPresets:Array.isArray(p?.buildPresets)?p.buildPresets.slice(-12):[], workshopDraft:{...base.workshopDraft,...(p?.workshopDraft||{})}, workshopTwoHand:!!p?.workshopTwoHand, mapPins:normalizeMapPins(p?.mapPins), currentMapPos:(p?.currentMapPos&&clampMapCoord(p.currentMapPos.x)!=null&&clampMapCoord(p.currentMapPos.y)!=null)?{x:clampMapCoord(p.currentMapPos.x),y:clampMapCoord(p.currentMapPos.y),at:safeStoredString(p.currentMapPos.at||'',40)}:null, mapNavPinId:safeStoredString(p?.mapNavPinId||'',120)||null, mapRouteQueue:Array.isArray(p?.mapRouteQueue)?p.mapRouteQueue.slice(0,30).map(x=>safeStoredString(x,120)):[], mapAutoRouteBudget:['15','30','60','long'].includes(String(p?.mapAutoRouteBudget))?String(p.mapAutoRouteBudget):'30', mapAutoRouteMeta:(p?.mapAutoRouteMeta&&typeof p.mapAutoRouteMeta==='object')?p.mapAutoRouteMeta:null, runeRecovery:{...base.runeRecovery,...(p?.runeRecovery||{}),prevRouteQueue:Array.isArray(p?.runeRecovery?.prevRouteQueue)?p.runeRecovery.prevRouteQueue.slice(0,30):[]}, respecDraft:(p?.respecDraft&&typeof p.respecDraft==='object')?{...base.stats,...p.respecDraft}:null, weaponCompareIds:Array.isArray(p?.weaponCompareIds)?p.weaponCompareIds.slice(0,3):[], weaponCompareInitialized:typeof p?.weaponCompareInitialized==='boolean'?p.weaponCompareInitialized:(Array.isArray(p?.weaponCompareIds)&&p.weaponCompareIds.length>0), lastPlannerWeapon:safeStoredString(p?.lastPlannerWeapon||'',120)||null, lastPlannerType:['regular','somber'].includes(p?.lastPlannerType)?p.lastPlannerType:null, plannerTarget:(p?.plannerTarget==null||p?.plannerTarget==='')?null:Number(p.plannerTarget), noHintMode:!!p?.noHintMode, lastOpenedAt:p?.lastOpenedAt||null
   };
   // v2.4.3: Radahn is a base-game boss. Migrate/synchronize the old DLC prerequisite flag so there is no permanent lock or split truth.
@@ -1852,9 +1878,18 @@ function renderProgressList(list,map,rootSelector,revealedSet,isDlc=false){
   }));
 }
 
+function baseProgressMetrics(progress=state.progress){
+  const required=progressSteps.filter(s=>!s.optional);
+  const optional=progressSteps.filter(s=>s.optional);
+  return {
+    requiredDone:required.filter(s=>!!progress?.[s.id]).length, requiredTotal:required.length,
+    optionalDone:optional.filter(s=>!!progress?.[s.id]).length, optionalTotal:optional.length
+  };
+}
+
 function renderProgress(){
-  const baseDone=doneCount(progressSteps,state.progress);
-  document.querySelector('#progressLabel').textContent=`${baseDone} / ${progressSteps.length}`;
+  const pm=baseProgressMetrics();
+  document.querySelector('#progressLabel').textContent=`本編 ${pm.requiredDone} / ${pm.requiredTotal}${pm.optionalTotal?` ・ 任意 ${pm.optionalDone}/${pm.optionalTotal}`:''}`;
   document.querySelector('#progressSpoilerNote').textContent=spoilerOpen()?'全開放：進行名を表示中':spoilerStrict()?'厳重：未来の固有名詞を隠します':'未来の項目は押すまで伏せます';
   renderProgressList(progressSteps,state.progress,'#progressList',revealedProgress,false);
   const wrap=document.querySelector('#dlcProgressWrap');
@@ -2203,8 +2238,22 @@ function openLost(){
 }
 
 function nextBoss(){
-  const display=currentDisplayGoal(); if(display.kind!=='gear'&&display.step.type==='boss')return display;
-  const list=display.kind==='dlc'?dlcSteps:progressSteps, map=display.kind==='dlc'?state.dlcProgress:state.progress; const step=list.find(s=>!map[s.id]&&s.type==='boss'); return step?{kind:display.kind,step}:null;
+  const isDlc=!!(state.dlcEnabled&&!state.dlcProgress.dlcComplete&&(state.dlcProgress.realmShadow||state.progress.ending));
+  const list=isDlc?dlcSteps:progressSteps;
+  const curGoal=isDlc?getCurrentDlcGoal():getCurrentGoal();
+  const kind=isDlc?'dlc':'base';
+  if(curGoal?.type==='boss'&&!progressDone(curGoal.id,isDlc))return {kind,step:curGoal};
+  const rawIndex=list.findIndex(s=>s.id===curGoal?.id);
+  const curIndex=rawIndex>=0?rawIndex:0;
+  const pending=s=>!progressDone(s.id,isDlc)&&s.type==='boss';
+  const upcomingRequired=list.slice(curIndex).find(s=>!s.optional&&pending(s));
+  if(upcomingRequired)return {kind,step:upcomingRequired};
+  const upcomingAny=list.slice(curIndex).find(pending);
+  if(upcomingAny)return {kind,step:upcomingAny};
+  const fallbackRequired=list.find(s=>!s.optional&&pending(s));
+  if(fallbackRequired)return {kind,step:fallbackRequired};
+  const fallback=list.find(pending);
+  return fallback?{kind,step:fallback}:null;
 }
 function phaseVigorTarget(step){
   if(step?.phase==='early')return 30;
@@ -2594,7 +2643,7 @@ function openBuildWorkshop(selectedWeaponId=null){
 
 const mapRegionLayout = {
   limgrave:{x:48,y:73}, weeping:{x:42,y:90}, liurniaRegion:{x:34,y:55}, caelidRegion:{x:70,y:72}, undergroundRegion:{x:56,y:84},
-  altusCapitalRegion:{x:49,y:37}, mountainRegion:{x:68,y:19}, endRegion:{x:82,y:39}, shadowRegion:{x:16,y:28}
+  volcanoRegion:{x:24,y:39}, altusCapitalRegion:{x:49,y:37}, mountainRegion:{x:68,y:19}, endRegion:{x:82,y:39}, shadowRegion:{x:16,y:28}
 };
 let mapPinMode=false;
 let mapPinGearId=null;
@@ -2784,7 +2833,7 @@ async function renderCustomMap(){
   const canReuse=!!(blob&&reusableImg&&reusableSrc===url);
   const imageMarkup=canReuse?'<span id="userMapImgSlot"></span>':`<img id="userMapImg" class="user-map-img" src="${escapeAttr(url||'')}" alt="ユーザーが読み込んだマップ画像">`;
   const imgArea=blob?`<div id="userMapWrap" class="user-map-wrap">${imageMarkup}<div id="mapDynamicOverlay">${mapRouteOverlayHtml()}${currentMapMarkerHtml()}${(state.mapPins||[]).map(customMapPinHtml).join('')}</div></div>`:`<div class="user-map-wrap empty"><div><strong>自分のマップ画像はまだありません</strong><p>スクリーンショット等を自分で選択すると、この端末内だけで表示できます。</p></div></div>`;
-  document.querySelector('#guideBody').innerHTML=`<div class="map-mode-tabs"><button data-map-mode="schematic" type="button">🧭 簡易マップ</button><button class="active" data-map-mode="custom" type="button">🖼️ 自分のマップ</button></div>${mapCurrentMode?'<div class="map-place-hint">🧍 現在いる場所を、自分のマップ画像上で1回タップしてください。</div>':mapPinMode&&mapPinRecovery?'<div class="map-place-hint">☠️ ルーンを落とした地点を、自分のマップ画像上で1回タップしてください。配置すると一時的に最優先ナビになります。</div>':mapPinMode&&mapPinRuneFarmId?`<div class="map-place-hint">💰 <strong>${escapeHtml(runeFarms.find(f=>f.id===mapPinRuneFarmId)?.name||'ルーン稼ぎ')}</strong> の位置を、自分のマップ画像上で1回タップしてください。</div>`:mapPinMode&&mapPinGearId?`<div class="map-place-hint">🎯 <strong>${escapeHtml(objective?.name||'目標')}</strong> を置く場所を、自分のマップ画像上で1回タップしてください。</div>`:''}<div class="user-map-toolbar"><label>🖼️ 画像を選ぶ<input id="mapImageInput" type="file" accept="image/*"></label><button id="mapCurrentModeBtn" class="${mapCurrentMode?'map-current-mode':''}" type="button">🧍 ${state.currentMapPos?'現在地を移動':'現在地を置く'}${mapCurrentMode?'：画像をタップ':''}</button><button id="mapPinModeBtn" class="${mapPinMode&&!mapPinGearId?'map-pin-mode':''}" type="button">＋ 自由ピン${mapPinMode&&!mapPinGearId?'：画像をタップ':''}</button>${objective?`<button id="mapPlaceGoalBtn" class="${mapPinGearId?'map-pin-mode':''}" type="button" ${isGearPastPointOfNoReturn(objective)?'disabled':''}>🎯 ${isGearPastPointOfNoReturn(objective)?'現周回では配置不可':'この目標を画像に置く'}</button>`:''}${blob?'<button id="mapImageDeleteBtn" type="button">画像を外す</button>':''}</div>${imgArea}${mapNavSummaryHtml()}${mapObjectiveCardHtml(objective)}<p class="map-caption">現在地・経由地・目的地を結ぶ線は、画像上で進行方向を見失わないための直線ガイドです。周回ルートは到着するたび次の経由地へ自動で送ります。v2.4.6ではRED team修正とスマホ片手操作を両立し、主要機能を下部ナビと6つのクイック操作へ整理しています。所要時間は画像上距離とピン種別による目安で、実際の道順・崖・高低差・通行可否は判定しません。画像と位置情報は端末内だけに保存されます。</p>${renderPinList()}`;
+  document.querySelector('#guideBody').innerHTML=`<div class="map-mode-tabs"><button data-map-mode="schematic" type="button">🧭 簡易マップ</button><button class="active" data-map-mode="custom" type="button">🖼️ 自分のマップ</button></div>${mapCurrentMode?'<div class="map-place-hint">🧍 現在いる場所を、自分のマップ画像上で1回タップしてください。</div>':mapPinMode&&mapPinRecovery?'<div class="map-place-hint">☠️ ルーンを落とした地点を、自分のマップ画像上で1回タップしてください。配置すると一時的に最優先ナビになります。</div>':mapPinMode&&mapPinRuneFarmId?`<div class="map-place-hint">💰 <strong>${escapeHtml(runeFarms.find(f=>f.id===mapPinRuneFarmId)?.name||'ルーン稼ぎ')}</strong> の位置を、自分のマップ画像上で1回タップしてください。</div>`:mapPinMode&&mapPinGearId?`<div class="map-place-hint">🎯 <strong>${escapeHtml(objective?.name||'目標')}</strong> を置く場所を、自分のマップ画像上で1回タップしてください。</div>`:''}<div class="user-map-toolbar"><label>🖼️ 画像を選ぶ<input id="mapImageInput" type="file" accept="image/*"></label><button id="mapCurrentModeBtn" class="${mapCurrentMode?'map-current-mode':''}" type="button">🧍 ${state.currentMapPos?'現在地を移動':'現在地を置く'}${mapCurrentMode?'：画像をタップ':''}</button><button id="mapPinModeBtn" class="${mapPinMode&&!mapPinGearId?'map-pin-mode':''}" type="button">＋ 自由ピン${mapPinMode&&!mapPinGearId?'：画像をタップ':''}</button>${objective?`<button id="mapPlaceGoalBtn" class="${mapPinGearId?'map-pin-mode':''}" type="button" ${isGearPastPointOfNoReturn(objective)?'disabled':''}>🎯 ${isGearPastPointOfNoReturn(objective)?'現周回では配置不可':'この目標を画像に置く'}</button>`:''}${blob?'<button id="mapImageDeleteBtn" type="button">画像を外す</button>':''}</div>${imgArea}${mapNavSummaryHtml()}${mapObjectiveCardHtml(objective)}<p class="map-caption">現在地・経由地・目的地を結ぶ線は、画像上で進行方向を見失わないための直線ガイドです。周回ルートは到着するたび次の経由地へ自動で送ります。v2.4.7ではRED team修正とスマホ片手操作を両立し、主要機能を下部ナビと6つのクイック操作へ整理しています。所要時間は画像上距離とピン種別による目安で、実際の道順・崖・高低差・通行可否は判定しません。画像と位置情報は端末内だけに保存されます。</p>${renderPinList()}`;
   if(canReuse){const slot=document.querySelector('#userMapImgSlot');if(slot)slot.replaceWith(reusableImg);}
   document.querySelectorAll('[data-map-mode]').forEach(b=>b.addEventListener('click',()=>b.dataset.mapMode==='schematic'?renderSchematicMap():renderCustomMap()));
   document.querySelector('#mapImageInput')?.addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith('image/')){showToast('画像ファイルを選んでください');return;}if(file.size>12*1024*1024){alert('画像が大きすぎます。12MB以下を目安にしてください。');return;}try{await setLocalMapImage(file);clearMapObjectUrlCache();mapPinMode=false;logActivity('map','マップ画像を設定',file.name);saveStore();await renderCustomMap();showToast('マップ画像を端末内に保存しました');}catch(err){console.error(err);alert(mapStorageErrorMessage(err));}});
@@ -2886,6 +2935,8 @@ function regionEntries(region){
 function regionReached(region){
   if(region.id==='limgrave')return true;
   if(region.scope==='dlc'&&!state.dlcEnabled)return false;
+  if((region.reachedAfterProgress||[]).some(id=>progressDone(id,false)))return true;
+  if((region.reachedAfterDlcProgress||[]).some(id=>progressDone(id,true)))return true;
   return regionEntries(region).some(x=>x.done);
 }
 function regionStats(region){const entries=regionEntries(region);const done=entries.filter(x=>x.done).length;return {entries,done,total:entries.length,pct:entries.length?Math.round(done/entries.length*100):0};}
@@ -3061,7 +3112,7 @@ function openRouteMode(){const body=`<div class="choice-stack">${routeModes.map(
 
 function renderProfileBadge(){document.querySelector('#profileBadge').textContent=state.name;}
 function renderProfileDialog(){
-  const root=document.querySelector('#profileList'); root.innerHTML=Object.entries(store.profiles).map(([id,p])=>{p=normalizeProfile(p);const dc=doneCount(progressSteps,p.progress);return `<div class="profile-card ${id===store.activeProfileId?'active':''}"><div><strong>${escapeHtml(p.name)}</strong><small>本編 ${dc}/${progressSteps.length} ・ ${builds.find(b=>b.id===p.build)?.label||'未設定'}</small><div class="progress-mini"><span style="width:${Math.round(dc/progressSteps.length*100)}%"></span></div></div><div class="profile-card-actions"><button data-profile-select="${escapeAttr(id)}">${id===store.activeProfileId?'使用中':'切替'}</button><button data-profile-rename="${escapeAttr(id)}">名前</button>${Object.keys(store.profiles).length>1?`<button data-profile-delete="${escapeAttr(id)}">削除</button>`:''}</div></div>`;}).join('');
+  const root=document.querySelector('#profileList'); root.innerHTML=Object.entries(store.profiles).map(([id,p])=>{p=normalizeProfile(p);const pm=baseProgressMetrics(p.progress);const pct=pm.requiredTotal?Math.round(pm.requiredDone/pm.requiredTotal*100):0;return `<div class="profile-card ${id===store.activeProfileId?'active':''}"><div><strong>${escapeHtml(p.name)}</strong><small>本編 ${pm.requiredDone}/${pm.requiredTotal}${pm.optionalTotal?` ・ 任意 ${pm.optionalDone}/${pm.optionalTotal}`:''} ・ ${builds.find(b=>b.id===p.build)?.label||'未設定'}</small><div class="progress-mini"><span style="width:${pct}%"></span></div></div><div class="profile-card-actions"><button data-profile-select="${escapeAttr(id)}">${id===store.activeProfileId?'使用中':'切替'}</button><button data-profile-rename="${escapeAttr(id)}">名前</button>${Object.keys(store.profiles).length>1?`<button data-profile-delete="${escapeAttr(id)}">削除</button>`:''}</div></div>`;}).join('');
   root.querySelectorAll('[data-profile-select]').forEach(btn=>btn.addEventListener('click',()=>switchProfile(btn.dataset.profileSelect)));
   root.querySelectorAll('[data-profile-rename]').forEach(btn=>btn.addEventListener('click',()=>{const id=btn.dataset.profileRename;const name=prompt('プロフィール名',store.profiles[id].name);if(!name)return;store.profiles[id].name=name.trim().slice(0,20)||store.profiles[id].name;if(id===store.activeProfileId)state.name=store.profiles[id].name;saveStore();renderProfileDialog();renderProfileBadge();}));
   root.querySelectorAll('[data-profile-delete]').forEach(btn=>btn.addEventListener('click',()=>{const id=btn.dataset.profileDelete;if(id===store.activeProfileId){alert('使用中のプロフィールは削除できません。先に別プロフィールへ切り替えてください。');return;}if(!confirm(`${store.profiles[id].name} を削除しますか？`))return;delete store.profiles[id];saveStore();renderProfileDialog();}));
